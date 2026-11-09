@@ -1,0 +1,33 @@
+name: carp_glitchtip_wrapper
+description: >-
+  Unified GlitchTip (Sentry protocol) reporting for CARP Flutter apps: env-based
+  setup, study metadata, network performance and ignore rules for offline errors.
+version: 0.1.0
+topics:
+  - glitchtip
+  - sentry
+  - error-reporting
+  - carp
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The Sentry SDK that talks to GlitchTip (GlitchTip speaks the Sentry
+  # protocol). Re-exported, so apps only depend on this package.
+  sentry_flutter: ^10.2.0
+
+  # Used to instrument every `http.Client()` an app or a CARP package (e.g.
+  # carp_webservices) creates, through `http.runWithClient`.
+  http: ^1.5.0
+
+  meta: ^1.15.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
