@@ -67,7 +67,9 @@ abstract final class CarpGlitchTip {
   ///
   /// An error escaping [body] means the app did not start; it is reported
   /// (tagged `startup_failure`) even if an ignore rule matches it, then
-  /// rethrown.
+  /// rethrown. Under `flutter test` on the Dart VM it is rethrown without
+  /// waiting for the report, so a widget test that fails in the zone does
+  /// not hang in fake time.
   ///
   /// Set [instrumentHttp] to `false` to skip the HTTP instrumentation. To
   /// use another HTTP client implementation (e.g. `cupertino_http`), pass
@@ -92,16 +94,33 @@ abstract final class CarpGlitchTip {
       try {
         await body();
       } catch (error, stackTrace) {
-        await _reportStartupFailure(error, stackTrace);
+        final report = _reportStartupFailure(error, stackTrace);
+        // widget tests run in fake time, where the report would never
+        // finish: a failing test would hang instead of failing
+        if (isFlutterTest) {
+          unawaited(report);
+        } else {
+          await report;
+        }
         rethrow;
       }
     }
 
-    Future<void> zoned() => async.runZoned(
-      run,
-      zoneValues: {_zoneKey: true, _httpZoneKey: instrumentHttp},
-      zoneSpecification: kIsWeb ? _webZoneSpecification() : null,
-    );
+    Future<void> zoned() {
+      final values = {_zoneKey: true, _httpZoneKey: instrumentHttp};
+      if (!kIsWeb) return async.runZoned(run, zoneValues: values);
+      // the web zone handles uncaught errors, so the error of a future
+      // created in it would go to that handler instead of the caller, whose
+      // future would never complete
+      final done = Completer<void>();
+      async.runZoned(
+        () => run().then((_) => done.complete(), onError: done.completeError),
+        zoneValues: values,
+        zoneSpecification: _webZoneSpecification(),
+      );
+      return done.future;
+    }
+
     if (!instrumentHttp) return zoned();
     return http.runWithClient(zoned, () => _zoneClient(innerClient));
   }

@@ -34,19 +34,56 @@ extension NetworkConditionVisuals on NetworkCondition {
 }
 
 /// A connected button group that switches the network condition of the
-/// sample CAWS.
+/// sample CAWS, or a stack of full-width buttons where the connected
+/// group does not fit.
 class NetworkSwitcher extends StatelessWidget {
   /// Creates the switcher.
   const NetworkSwitcher({super.key});
 
+  // the padding of a small button, and the gap between connected ones
+  static const _segmentPadding = 2 * 16.0 + 2;
+
+  // the width the buttons need next to each other
+  static double _rowWidth(BuildContext context) {
+    final style = M3ETheme.of(context).typeScale.labelLarge;
+    final textScaler = MediaQuery.textScalerOf(context);
+    var width = 0.0;
+    for (final condition in NetworkCondition.values) {
+      final painter = TextPainter(
+        text: TextSpan(text: condition.label, style: style),
+        textScaler: textScaler,
+        textDirection: Directionality.of(context),
+        maxLines: 1,
+      )..layout();
+      width += painter.width + _segmentPadding;
+      painter.dispose();
+    }
+    return width;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => _group(
+      context,
+      // stacked when they do not fit next to each other, e.g. on a small
+      // phone or with large text
+      stackedWidth: _rowWidth(context) > constraints.maxWidth
+          ? constraints.maxWidth
+          : null,
+    ),
+  );
+
+  // connected segments, or, given a [stackedWidth], separate buttons of that
+  // width below each other: connected segments are only rounded at the
+  // start and the end of a row
+  Widget _group(BuildContext context, {double? stackedWidth}) {
     final state = ExampleScope.watch(context).state;
-    // stacked when large text would not fit next to each other
-    final vertical = MediaQuery.textScalerOf(context).scale(14) > 19;
+    final stacked = stackedWidth != null;
     return M3EButtonGroup(
-      type: M3EButtonGroupType.connected,
-      direction: vertical ? Axis.vertical : Axis.horizontal,
+      type: stacked
+          ? M3EButtonGroupType.standard
+          : M3EButtonGroupType.connected,
+      direction: stacked ? Axis.vertical : Axis.horizontal,
       style: M3EButtonStyle.tonal,
       size: M3EButtonSize.sm,
       selectedIndex: state.networkCondition.index,
@@ -62,6 +99,9 @@ class NetworkSwitcher extends StatelessWidget {
           M3EButtonGroupAction(
             label: Text(condition.label),
             semanticLabel: condition.semanticLabel,
+            // full width: in a group, a button is as wide as its minimum
+            // width unless its label needs more
+            minWidth: stackedWidth,
           ),
       ],
     );

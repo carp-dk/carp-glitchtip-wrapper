@@ -14,8 +14,8 @@ import 'report.dart';
 /// listeners when a report arrives.
 ///
 /// The transport of preview mode (no DSN defined): nothing leaves the
-/// device, and the Reports tab shows exactly what would have been sent,
-/// after the wrapper's ignore rules and privacy policy.
+/// device, and the Reports tab shows the app's reports as GlitchTip would
+/// get them, after the wrapper's ignore rules and privacy policy.
 class ReportOutbox extends GlitchTipTestTransport with ChangeNotifier {
   @override
   Future<SentryId?> send(SentryEnvelope envelope) async {

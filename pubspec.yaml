@@ -1,11 +1,11 @@
 name: carp_glitchtip_wrapper
 description: >-
-  Unified GlitchTip (Sentry SDK) for CARP Flutter apps: env-based
-  setup, study metadata, network performance and ignore rules for offline errors.
+  Unified GlitchTip (Sentry SDK) for CARP Flutter apps: study metadata,
+  network performance and offline errors ignored by default.
 homepage: https://github.com/carp-dk/carp-glitchtip-wrapper
 repository: https://github.com/carp-dk/carp-glitchtip-wrapper
 issue_tracker: https://github.com/carp-dk/carp-glitchtip-wrapper/issues
-version: 0.1.0
+version: 0.1.1
 topics:
   - glitchtip
   - sentry

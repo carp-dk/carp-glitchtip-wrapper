@@ -9,6 +9,8 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart';
+import 'package:carp_glitchtip_wrapper/src/util/platform.dart'
+    show debugIsFlutterTest;
 import 'package:carp_glitchtip_wrapper/testing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1141,6 +1143,9 @@ void main() {
           }),
           throwsA(same(failure)),
         );
+        // under flutter test it is rethrown before the report is sent
+        await eventually(() => transport.events.isNotEmpty);
+        await settle();
         final event = transport.events.single;
         expect(event.throwable, same(failure));
         expect(event.tags, containsPair('startup_failure', 'true'));
@@ -1151,6 +1156,47 @@ void main() {
         expect(transport.events, hasLength(1), reason: 'ignored later on');
       },
     );
+
+    testWidgets('a widget test failing in the zone fails, not hangs', (
+      tester,
+    ) async {
+      final failure = TestFailure('expected something else');
+      // in fake time, waiting for the report to be sent would never end
+      await expectLater(
+        CarpGlitchTip.runZoned(() async {
+          await tester.runAsync(start);
+          throw failure;
+        }),
+        throwsA(same(failure)),
+      );
+      // the report is still sent
+      for (var i = 0; i < 50 && transport.events.isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 5)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(transport.events.single.throwable, same(failure));
+      // the timers of the SDK's app start tracking, which waits for a frame
+      tester.binding.scheduleFrame();
+      await tester.pump();
+      await tester.pump(const Duration(minutes: 1));
+      // a hang fails at once, not after the default 10 minutes
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test('in an app, reports a startup failure before rethrowing it', () async {
+      addTearDown(() => debugIsFlutterTest = null);
+      final failure = StateError('startup failed');
+      await expectLater(
+        CarpGlitchTip.runZoned(() async {
+          await start();
+          debugIsFlutterTest = false;
+          throw failure;
+        }),
+        throwsA(same(failure)),
+      );
+      expect(transport.events.single.throwable, same(failure));
+    });
 
     test('rethrows a startup failure while reporting is off', () async {
       final failure = StateError('startup failed');
@@ -1184,6 +1230,8 @@ void main() {
         }),
         throwsA(same(failure)),
       );
+      await eventually(() => transport.events.isNotEmpty);
+      await settle();
       expect(transport.events.single.throwable, same(failure));
     });
   });

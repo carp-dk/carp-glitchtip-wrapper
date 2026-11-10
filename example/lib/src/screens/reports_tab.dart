@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 
 import '../app/example_routes.dart';
+import '../app/texts.dart';
 import '../reporting/report.dart';
 import '../reporting/report_outbox.dart';
 import '../state/example_scope.dart';
@@ -88,8 +89,8 @@ class _PreviewReports extends StatelessWidget {
           title: 'Reports',
           subtitle: reports.isEmpty
               ? 'Preview: reports stay on this device'
-              : '${errors.length} errors and messages, '
-                    '${reports.length - errors.length} transactions',
+              : '${countOf(errors.length, 'error or message', 'errors and messages')}, '
+                    '${countOf(reports.length - errors.length, 'transaction')}',
           actions: [
             if (reports.isNotEmpty)
               M3EIconButton(
@@ -195,8 +196,8 @@ class _Empty extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Errors, messages and transactions appear here exactly as '
-            'GlitchTip would get them. Try something on the Try it tab.',
+            'Errors, messages and transactions appear here as GlitchTip '
+            'would get them. Try something on the Try it tab.',
             style: theme.typeScale.bodyMedium.copyWith(
               color: scheme.onSurfaceVariant,
             ),
@@ -222,10 +223,10 @@ class _LiveReports extends StatelessWidget {
     ];
     return CustomScrollView(
       slivers: [
-        const PageAppBar(
+        PageAppBar(
           title: 'Reports',
-          subtitle: 'Live: reports go to GlitchTip',
-          actions: [StatusAction()],
+          subtitle: ReportingModeCard.liveTitle(CarpGlitchTip.status),
+          actions: const [StatusAction()],
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),

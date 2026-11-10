@@ -67,19 +67,22 @@ void main() {
     await binding.takeScreenshot(name);
   }
 
+  final tryIt = find
+      .descendant(of: find.byType(TryItTab), matching: find.byType(Scrollable))
+      .first;
+
+  // Scrolls the Try it tab back to its top, the network condition.
+  Future<void> toTop(WidgetTester tester) async {
+    await tester.drag(tryIt, const Offset(0, 4000));
+    await idle(tester, 800);
+  }
+
   // Runs an action of the Try it tab and waits for its outcome.
   Future<void> run(WidgetTester tester, String demo, String button) async {
     final card = find.byKey(ValueKey('try-it-$demo'));
-    await tester.scrollUntilVisible(
-      card,
-      300,
-      scrollable: find
-          .descendant(
-            of: find.byType(TryItTab),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
+    // every action is below the top, where the last one may have scrolled
+    await toTop(tester);
+    await tester.scrollUntilVisible(card, 300, scrollable: tryIt);
     ActionOutcome? outcome() => find
         .descendant(of: card, matching: find.byType(OutcomeView))
         .evaluate()
@@ -95,6 +98,7 @@ void main() {
   }
 
   Future<void> network(WidgetTester tester, String condition) async {
+    await toTop(tester);
     await tap(tester, find.text(condition).hitTestable().first);
     await idle(tester, 600);
   }
@@ -113,6 +117,8 @@ void main() {
       await tester.pumpWidget(
         GlitchTipExampleApp(state: state, outbox: outbox),
       );
+      // on Android, screenshots are taken of an image of the app's surface
+      await binding.convertFlutterSurfaceToImage();
 
       // 1. welcome; a test report before sign-in has no study
       await idle(tester, 2500); // the logo is decoded in the background
@@ -156,15 +162,7 @@ void main() {
       await run(tester, 'measureTask', 'Measure');
       await run(tester, 'caughtError', 'Report');
       await run(tester, 'sync', 'Sync');
-      await tester.drag(
-        find
-            .descendant(
-              of: find.byType(TryItTab),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-        const Offset(0, 4000),
-      );
+      await toTop(tester);
       await screenshot(tester, '04_try_it');
 
       // 5. the reports, newest first

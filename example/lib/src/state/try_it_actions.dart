@@ -14,6 +14,7 @@ import '../caws/caws_exception.dart';
 import '../caws/network_condition.dart';
 import '../caws/sample_caws_server.dart';
 import '../models/device_not_connected_exception.dart';
+import '../reporting/example_reporting.dart';
 import '../reporting/report_outbox.dart';
 import 'app_state.dart';
 
@@ -53,8 +54,9 @@ class ActionOutcome {
 /// The actions of the Try it tab. Each one does what a CARP app does and
 /// says what GlitchTip gets.
 ///
-/// In preview mode the outcome is read from [outbox], so it shows exactly
-/// what would have been sent.
+/// In preview mode, whether an error the app reported was sent is read from
+/// [outbox]. The other outcomes follow from the app's rules, the sample
+/// rates and the status of reporting.
 class TryItActions {
   /// Creates the actions of the app with [state]; [outbox] is the preview
   /// mode's transport, `null` in live mode.
@@ -85,49 +87,38 @@ class TryItActions {
     'https://caws.example.org/api/files?token=abc123',
   );
 
-  /// Uploads collected data, like the data manager of a CARP app. What is
-  /// reported depends on the network condition.
+  /// Uploads collected data, like the data manager of a CARP app, and
+  /// reports what fails. What GlitchTip gets depends on the network.
   Future<ActionOutcome> syncData() async {
     final invitation = state.invitation;
     if (invitation == null) return _noStudy;
+    // the sample CAWS takes the condition when the request starts
+    final slow = state.networkCondition == NetworkCondition.slow;
     final watch = Stopwatch()..start();
     try {
       await state.caws.appendToDataStreams(
         invitation.studyDeploymentId,
         invitation.deviceRoleName ?? 'Primary Phone',
       );
-      final seconds = (watch.elapsedMilliseconds / 1000).toStringAsFixed(1);
-      final slow = state.networkCondition == NetworkCondition.slow;
-      return _orOff(
-        ActionOutcome(
-          OutcomeKind.recorded,
-          'Uploaded in $seconds s',
-          'Recorded as the transaction "$syncTransaction"'
-              '${slow ? ', which shows the slow response.' : '.'}',
-        ),
+    } catch (error, stackTrace) {
+      // like AppState: report every error, the rules drop the expected ones
+      final sent = await _capture(
+        error,
+        () => CarpGlitchTip.captureException(error, stackTrace: stackTrace),
       );
-    } on CawsException catch (error) {
-      return _orOff(
-        ActionOutcome(
-          OutcomeKind.reported,
-          'CAWS answered ${error.statusCode}',
-          error.statusCode >= 500
-              ? 'The wrapper reported "HTTP ${error.statusCode}: '
-                    '$syncTransaction", at most once per 10 minutes. The '
-                    'app shows the error and does not report it again.'
-              : 'Only server errors (5xx) are reported by the wrapper.',
-        ),
-      );
-    } on http.ClientException catch (error) {
-      return _orOff(
-        ActionOutcome(
-          OutcomeKind.ignored,
-          'No connection',
-          '${error.message}. IgnoreRule.offline() drops this expected '
-              'error: nothing is reported, the request stays a breadcrumb.',
-        ),
-      );
+      return _captured(error, sent);
     }
+    final seconds = (watch.elapsedMilliseconds / 1000).toStringAsFixed(1);
+    return _transaction(
+      ActionOutcome(
+        OutcomeKind.recorded,
+        'Uploaded in $seconds s',
+        'Recorded as the transaction "$syncTransaction"'
+            '${slow ? ', which shows the slow response.' : '.'}',
+      ),
+      CarpGlitchTip.status.httpSampleRate,
+      GlitchTipKeys.httpSampleRate,
+    );
   }
 
   /// Asks CAWS for a device that is not in the study deployment, catches
@@ -163,7 +154,7 @@ class TryItActions {
         throw unhandledError();
       }),
     );
-    return _orOff(
+    return _error(
       const ActionOutcome(
         OutcomeKind.reported,
         'Thrown and not caught',
@@ -180,19 +171,16 @@ class TryItActions {
       error,
       () => CarpGlitchTip.captureException(error),
     );
-    if (sent != null) {
-      return ActionOutcome(
+    return _reported(
+      error,
+      sent,
+      ActionOutcome(
         OutcomeKind.reported,
         'Reported, scrubbed',
-        'GlitchTip gets: "${sent.exceptions?.lastOrNull?.value}"',
-      );
-    }
-    return _orOff(
-      const ActionOutcome(
-        OutcomeKind.reported,
-        'Reported, scrubbed',
-        'The wrapper replaced the e-mail address and dropped the query with '
-            'the token.',
+        sent == null
+            ? 'The wrapper replaced the e-mail address and dropped the query '
+                  'with the token.'
+            : 'GlitchTip gets: "${sent.exceptions?.lastOrNull?.value}"',
       ),
     );
   }
@@ -215,13 +203,15 @@ class TryItActions {
       () => Future<void>.delayed(const Duration(milliseconds: 600)),
     );
     final seconds = (watch.elapsedMilliseconds / 1000).toStringAsFixed(1);
-    return _orOff(
+    return _transaction(
       ActionOutcome(
         OutcomeKind.recorded,
         'Measured $seconds s',
         'Recorded as the transaction "$taskName". GlitchTip shows the '
             'count and duration percentiles of each name.',
       ),
+      CarpGlitchTip.status.tracesSampleRate,
+      GlitchTipKeys.tracesSampleRate,
     );
   }
 
@@ -231,37 +221,87 @@ class TryItActions {
     'Accept an invitation first.',
   );
 
-  // what reporting [error] did: in preview mode read from the outbox,
-  // otherwise what the rules do with it
+  /// What opening the screen of [route] records: a navigation breadcrumb,
+  /// and the screen tag of the reports from there.
+  ActionOutcome openedScreen(String route) {
+    final outcome = ActionOutcome(
+      OutcomeKind.info,
+      'Opened $route',
+      'Recorded as a navigation breadcrumb. Reports from that screen carry '
+          'screen: $route; route arguments are not recorded.',
+    );
+    return CarpGlitchTip.isEnabled ? outcome : _notSent(outcome);
+  }
+
+  // whether GlitchTip gets errors: also while the Sentry SDK is still
+  // starting, unlike transactions and navigation
+  static bool get _sendsErrors =>
+      CarpGlitchTip.isEnabled ||
+      CarpGlitchTip.status.disabledReason == DisabledReason.starting;
+
+  // what reporting [error] did, see [_reported]: the app's rules drop some
+  // errors
   ActionOutcome _captured(Object error, SentryEvent? sent) {
-    final type = error.runtimeType.toString();
-    if (sent != null) {
-      return ActionOutcome(
-        OutcomeKind.reported,
-        'Reported $type',
-        '"${sent.exceptions?.lastOrNull?.value}", with handled: yes and the '
-            'tags of the study.',
-      );
-    }
-    final ignored = switch (error) {
-      DeviceNotConnectedException() => (
+    final reported = ActionOutcome(
+      OutcomeKind.reported,
+      'Reported ${error.runtimeType}',
+      sent == null
+          ? ExampleDescriptions.describe(error)
+          : '"${sent.exceptions?.lastOrNull?.value}", with handled: yes and '
+                'the tags of the study.',
+    );
+    if (sent != null || !_sendsErrors) return _reported(error, sent, reported);
+    final dropped = switch (error) {
+      CawsException(:final statusCode)
+          when ExampleReporting.reportedByHttpClient(error) =>
+        _error(
+          ActionOutcome(
+            OutcomeKind.reported,
+            'CAWS answered $statusCode',
+            'The HTTP client reports a server error as "HTTP $statusCode" '
+                'with the request, once per 10 minutes per request; it '
+                'counts the repeats and sends the count with the next one. '
+                'The app\'s own report is dropped by its rule, so it is not '
+                'reported twice.',
+          ),
+        ),
+      DeviceNotConnectedException() => const ActionOutcome(
+        OutcomeKind.ignored,
         'Ignored by the app',
         'IgnoreType<DeviceNotConnectedException>() matches it: nothing is '
             'sent.',
       ),
-      http.ClientException(:final message) => (
+      http.ClientException(:final message) => ActionOutcome(
+        OutcomeKind.ignored,
         'Ignored: offline',
-        '$message. IgnoreRule.offline() drops it: nothing is sent.',
+        '$message. IgnoreRule.offline() drops it: nothing is sent, the '
+            'request stays a breadcrumb.',
       ),
       _ => null,
     };
-    if (ignored != null && (outbox != null || CarpGlitchTip.isEnabled)) {
-      return ActionOutcome(OutcomeKind.ignored, ignored.$1, ignored.$2);
+    return dropped ?? _reported(error, sent, reported);
+  }
+
+  // [reported], the outcome of [error] when GlitchTip gets it, or what kept
+  // it from GlitchTip. In preview mode [sent] is the event the outbox got
+  ActionOutcome _reported(
+    Object error,
+    SentryEvent? sent,
+    ActionOutcome reported,
+  ) {
+    final title = 'Not reported: ${error.runtimeType}';
+    if (!_sendsErrors) return _notSent(reported, title: title);
+    if (sent != null) return reported;
+    if (outbox != null) {
+      return _notSent(
+        reported,
+        title: title,
+        reason:
+            'it was sampled out (${GlitchTipKeys.sampleRate} is '
+            '${CarpGlitchTip.status.sampleRate})',
+      );
     }
-    final description = ExampleDescriptions.describe(error);
-    return _orOff(
-      ActionOutcome(OutcomeKind.reported, 'Reported $type', description),
-    );
+    return _error(reported);
   }
 
   // runs [capture]; in preview mode returns the event the outbox got for
@@ -286,13 +326,53 @@ class TryItActions {
     return null;
   }
 
-  ActionOutcome _orOff(ActionOutcome outcome) {
-    if (outbox != null || CarpGlitchTip.isEnabled) return outcome;
+  // [outcome] of an error: GlitchTip gets the share of errors the env sets
+  ActionOutcome _error(ActionOutcome outcome) => _sendsErrors
+      ? _share(
+          outcome,
+          CarpGlitchTip.status.sampleRate,
+          GlitchTipKeys.sampleRate,
+        )
+      : _notSent(outcome);
+
+  // [outcome] of a transaction: GlitchTip gets the share [rate] that [key]
+  // sets in the env (in preview mode too, overriding its 1)
+  ActionOutcome _transaction(ActionOutcome outcome, double? rate, String key) =>
+      CarpGlitchTip.isEnabled ? _share(outcome, rate, key) : _notSent(outcome);
+
+  static ActionOutcome _share(ActionOutcome outcome, double? rate, String key) {
+    if (rate == null || rate >= 1) return outcome;
+    if (rate <= 0) {
+      return _notSent(
+        outcome,
+        reason: '$key is 0 in this build; define $key=1 to get every one',
+      );
+    }
+    return ActionOutcome(
+      outcome.kind,
+      outcome.title,
+      '${outcome.detail} $key is $rate, so GlitchTip gets only this share.',
+    );
+  }
+
+  // [outcome] when GlitchTip gets nothing of it, because of [reason], by
+  // default the reason reporting is off
+  static ActionOutcome _notSent(
+    ActionOutcome outcome, {
+    String? title,
+    String? reason,
+  }) {
+    final why =
+        reason ??
+        CarpGlitchTip.status.disabledReason?.description ??
+        'reporting is off';
     return ActionOutcome(
       OutcomeKind.off,
-      outcome.title,
-      'Reporting is off, so GlitchTip gets nothing: '
-      '${CarpGlitchTip.status}.',
+      title ??
+          (outcome.kind == OutcomeKind.reported
+              ? 'Not reported'
+              : outcome.title),
+      'GlitchTip gets nothing: $why.',
     );
   }
 }

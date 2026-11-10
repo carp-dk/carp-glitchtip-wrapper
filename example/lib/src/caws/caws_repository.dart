@@ -69,8 +69,10 @@ class CawsSession {
 class CawsRepository {
   /// Creates a repository for the CAWS at [baseUri]. [client] creates the
   /// HTTP client of each call; by default `http.Client()`, which inside
-  /// `CarpGlitchTip.runZoned` is instrumented. Tests pass
-  /// `() => CarpGlitchTip.httpClient(SampleCawsClient(server))`.
+  /// `CarpGlitchTip.runZoned` is instrumented. Tests run the app in
+  /// `CarpGlitchTip.runZoned` with `innerClient: () =>
+  /// SampleCawsClient(server)`, or pass `() => SampleCawsClient(server)`
+  /// here.
   CawsRepository({http.Client Function()? client, Uri? baseUri})
     : _newClient = client ?? http.Client.new,
       baseUri = baseUri ?? SampleCawsServer.baseUri;

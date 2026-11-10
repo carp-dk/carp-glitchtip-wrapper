@@ -27,6 +27,8 @@ export 'src/app/example_app.dart';
 /// records its requests. Here every client also goes to the in-process
 /// sample CAWS at https://caws.example.org, so the example works offline.
 Future<void> main() {
+  // the only code before runZoned: it creates the sample server, but uses
+  // no Flutter API (the sample data is loaded on the first request)
   final caws = SampleCawsServer(data: () => SampleCawsData.load(rootBundle));
 
   return CarpGlitchTip.runZoned(

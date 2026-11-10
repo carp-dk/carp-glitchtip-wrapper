@@ -21,6 +21,13 @@ class ReportingModeCard extends StatelessWidget {
   /// Whether the status line of `CarpGlitchTip.status` is shown.
   final bool showStatusLine;
 
+  /// The title of the card in live mode with [status].
+  static String liveTitle(GlitchTipStatus status) => status.enabled
+      ? 'Live: reports go to GlitchTip'
+      : status.disabledReason == DisabledReason.starting
+      ? 'Live: starting'
+      : 'Live: reporting is off';
+
   @override
   Widget build(BuildContext context) {
     final theme = M3ETheme.of(context);
@@ -30,19 +37,20 @@ class ReportingModeCard extends StatelessWidget {
     final (title, explanation) = preview
         ? (
             'Preview: reports stay on this device',
-            'No DSN is set, so nothing is sent. The Reports tab shows exactly '
-                'what GlitchTip would get.',
-          )
-        : status.enabled
-        ? (
-            'Live: reports go to GlitchTip',
-            'Reports are sent to ${status.dsn} in the environment '
-                '${status.environment}.',
+            'No DSN is set, so nothing is sent. The Reports tab shows each '
+                'report as GlitchTip would get it.',
           )
         : (
-            'Live: reporting is off',
-            'A DSN is set, but nothing is sent: '
-                '${status.disabledReason?.description ?? 'disabled'}.',
+            liveTitle(status),
+            status.enabled
+                ? 'Reports are sent to ${status.dsn} in the environment '
+                      '${status.environment}.'
+                : status.disabledReason == DisabledReason.starting
+                ? 'Errors are already sent to ${status.dsn}. Requests, traces '
+                      'and navigation are recorded once the Sentry SDK has '
+                      'started; the status line in the log says when.'
+                : 'A DSN is set, but nothing is sent: '
+                      '${status.disabledReason?.description ?? 'disabled'}.',
           );
     return SectionCard(
       color: preview ? scheme.secondaryContainer : scheme.tertiaryContainer,

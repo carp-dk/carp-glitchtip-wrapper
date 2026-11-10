@@ -39,8 +39,9 @@ class PageAppBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitle = this.subtitle;
+    // the headline and the subtitle fit the bar's height up to 1.2
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.3,
+      maxScaleFactor: 1.2,
       child: M3EAppBar.sliver(
         variant: variant,
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),

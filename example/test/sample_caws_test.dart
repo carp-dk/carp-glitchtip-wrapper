@@ -165,8 +165,13 @@ void main() {
         body: 'not json',
       );
       expect(notJson.statusCode, 400);
-      final missing = await post('/api/missing-service', token: token);
+      final missing = await post(
+        '/api/missing-service',
+        token: token,
+        body: {'__type': CawsApi.getDeviceDeploymentFor},
+      );
       expect(missing.statusCode, 400);
+      expect(missing.body, contains('Unsupported request'));
       final get = await SampleCawsClient(server).get(url('/'));
       expect(get.statusCode, 404);
     });

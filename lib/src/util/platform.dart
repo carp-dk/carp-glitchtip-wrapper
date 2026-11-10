@@ -12,8 +12,13 @@ String get buildMode => kReleaseMode
     ? 'profile'
     : 'debug';
 
-/// Whether the app runs under `flutter test`.
-bool get isFlutterTest => platform.isFlutterTest;
+/// Whether the app runs under `flutter test` (on the Dart VM), unless a test
+/// set [debugIsFlutterTest].
+bool get isFlutterTest => debugIsFlutterTest ?? platform.isFlutterTest;
+
+/// Replaces [isFlutterTest] in the wrapper's tests of what it does in an app.
+@visibleForTesting
+bool? debugIsFlutterTest;
 
 /// Whether this is the root isolate of a Flutter engine. Spawned isolates
 /// must not start the Sentry SDK. This cannot tell the main engine from a

@@ -4,11 +4,13 @@
 // - `TasksScreen`, a detail screen: opening it is recorded as a navigation
 //   breadcrumb and sets the `screen` tag of reports.
 
+import 'package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 
 import '../app/example_routes.dart';
+import '../app/texts.dart';
 import '../models/study_protocol_summary.dart';
 import '../state/example_scope.dart';
 import '../widgets/pills.dart';
@@ -39,33 +41,35 @@ class TasksScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             sliver: SliverList.list(
               children: [
-                SectionCard(
-                  color: scheme.tertiaryContainer,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ShapeIcon(
-                        M3EIcons.route,
-                        shape: IconShape.arch,
-                        color: scheme.tertiary,
-                        iconColor: scheme.onTertiary,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          'Opening this screen was recorded as a navigation '
-                          'breadcrumb, and reports from here carry screen: '
-                          '${ExampleRoutes.tasks}.',
-                          style: theme.typeScale.bodyMedium.copyWith(
-                            color: scheme.onTertiaryContainer,
+                // what the wrapper's navigator observer records
+                if (CarpGlitchTip.isEnabled)
+                  SectionCard(
+                    color: scheme.tertiaryContainer,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ShapeIcon(
+                          M3EIcons.route,
+                          shape: IconShape.arch,
+                          color: scheme.tertiary,
+                          iconColor: scheme.onTertiary,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            'Opening this screen was recorded as a navigation '
+                            'breadcrumb, and reports from here carry screen: '
+                            '${ExampleRoutes.tasks}.',
+                            style: theme.typeScale.bodyMedium.copyWith(
+                              color: scheme.onTertiaryContainer,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
                 SectionHeader(
-                  '${tasks.length} tasks',
+                  countOf(tasks.length, 'task'),
                   subtitle:
                       '${protocol?.triggerCount ?? 0} triggers start '
                       'them on the devices of the study.',
@@ -99,18 +103,11 @@ class _TaskCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  task.name,
-                  style: theme.typography.emphasized.titleMedium.copyWith(
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-              InfoPill(task.type, tone: PillTone.tertiary),
-            ],
+          Text(
+            task.name,
+            style: theme.typography.emphasized.titleMedium.copyWith(
+              color: scheme.onSurface,
+            ),
           ),
           if (description != null) ...[
             const SizedBox(height: 4),
@@ -121,17 +118,17 @@ class _TaskCard extends StatelessWidget {
               ),
             ),
           ],
-          if (task.measures.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final measure in task.measures)
-                  InfoPill(measure, icon: M3EIcons.sensors),
-              ],
-            ),
-          ],
+          const SizedBox(height: 12),
+          // wraps, so long types and large text fit
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              InfoPill(task.type, tone: PillTone.tertiary),
+              for (final measure in task.measures)
+                InfoPill(measure, icon: M3EIcons.sensors),
+            ],
+          ),
         ],
       ),
     );

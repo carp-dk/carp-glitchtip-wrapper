@@ -4,12 +4,15 @@
 // - `StudyTab`, the protocol summary, the tags and the `study` context
 //   attached to every report, and leaving the study.
 
+import 'dart:math' as math;
+
 import 'package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 
 import '../app/example_routes.dart';
+import '../app/texts.dart';
 import '../models/participation_invitation.dart';
 import '../models/study_protocol_summary.dart';
 import '../reporting/glitchtip_study.dart';
@@ -30,7 +33,8 @@ class StudyTab extends StatelessWidget {
 
   void _leave(BuildContext context) {
     ExampleScope.read(context).state.leaveStudy();
-    Navigator.of(context).pushReplacementNamed(ExampleRoutes.invitations);
+    Navigator.of(context)
+        .pushNamedAndRemoveUntil(ExampleRoutes.invitations, (_) => false);
   }
 
   @override
@@ -65,7 +69,7 @@ class StudyTab extends StatelessWidget {
                   alignment: AlignmentDirectional.centerStart,
                   child: M3EButton.tonal(
                     icon: const Icon(M3EIcons.checklist),
-                    label: Text('Show the ${protocol.taskCount} tasks'),
+                    label: Text('Show ${countOf(protocol.taskCount, 'task')}'),
                     onPressed: () =>
                         Navigator.of(context).pushNamed(ExampleRoutes.tasks),
                   ),
@@ -182,6 +186,26 @@ class _ProtocolStats extends StatelessWidget {
 
   final StudyProtocolSummary protocol;
 
+  // the width of the widest of [texts], each with its style
+  static double _widest(
+    BuildContext context,
+    Iterable<(String, TextStyle)> texts,
+  ) {
+    final base = DefaultTextStyle.of(context).style;
+    var widest = 0.0;
+    for (final (text, style) in texts) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: base.merge(style)),
+        textScaler: MediaQuery.textScalerOf(context),
+        textDirection: Directionality.of(context),
+        maxLines: 1,
+      )..layout();
+      widest = math.max(widest, painter.width);
+      painter.dispose();
+    }
+    return widest.ceilToDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = M3ETheme.of(context);
@@ -191,6 +215,20 @@ class _ProtocolStats extends StatelessWidget {
       (protocol.triggerCount, 'Triggers'),
       (protocol.measureTypes.length, 'Measures'),
     ];
+    final countStyle = theme.typography.emphasized.displaySmall.copyWith(
+      color: scheme.primary,
+    );
+    final labelStyle = theme.typeScale.labelLarge.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+    // the content of every card is as wide as the widest, so where it does
+    // not fit, all three shrink alike
+    final width = _widest(context, [
+      for (final (count, label) in stats) ...[
+        ('$count', countStyle),
+        (label, labelStyle),
+      ],
+    ]);
     return Row(
       children: [
         for (final (index, (count, label)) in stats.indexed) ...[
@@ -202,22 +240,20 @@ class _ProtocolStats extends StatelessWidget {
                   horizontal: 16,
                   vertical: 18,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$count',
-                      style: theme.typography.emphasized.displaySmall.copyWith(
-                        color: scheme.primary,
-                      ),
+                // three in a row: large text shrinks instead of breaking
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: SizedBox(
+                    width: width,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('$count', style: countStyle),
+                        Text(label, style: labelStyle),
+                      ],
                     ),
-                    Text(
-                      label,
-                      style: theme.typeScale.labelLarge.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -255,9 +291,8 @@ class _Devices extends StatelessWidget {
             _icon(device.type),
             shape: index < primary ? IconShape.cookie6 : IconShape.circle,
             size: 40,
-            color: index < primary
-                ? scheme.secondaryContainer
-                : scheme.surfaceContainerHighest,
+            // the items of the list are surfaceContainerHighest
+            color: index < primary ? scheme.secondaryContainer : scheme.surface,
             iconColor: index < primary
                 ? scheme.onSecondaryContainer
                 : scheme.onSurfaceVariant,

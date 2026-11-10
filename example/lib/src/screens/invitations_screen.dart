@@ -3,13 +3,16 @@
 // Parts:
 // - `InvitationsScreen`, the invitations from CAWS; accepting one attaches
 //   the study to reports and loads its protocol.
+// - `_StudyAttached` and `_NoStudyYet`, what GlitchTip knows of the study.
 // - `_InvitationCard`, one invitation.
 
+import 'package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 
 import '../app/example_routes.dart';
+import '../app/texts.dart';
 import '../models/participation_invitation.dart';
 import '../state/app_state.dart';
 import '../state/example_scope.dart';
@@ -33,12 +36,19 @@ class InvitationsScreen extends StatelessWidget {
   ) async {
     final navigator = Navigator.of(context);
     final loaded = await ExampleScope.read(context).state.accept(invitation);
-    if (loaded) await navigator.pushReplacementNamed(ExampleRoutes.study);
+    // replaces everything, also a status sheet opened while loading
+    if (loaded) {
+      await navigator.pushNamedAndRemoveUntil(
+        ExampleRoutes.study,
+        (_) => false,
+      );
+    }
   }
 
   void _signOut(BuildContext context) {
     ExampleScope.read(context).state.signOut();
-    Navigator.of(context).pushReplacementNamed(ExampleRoutes.welcome);
+    Navigator.of(context)
+        .pushNamedAndRemoveUntil(ExampleRoutes.welcome, (_) => false);
   }
 
   @override
@@ -66,13 +76,17 @@ class InvitationsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             sliver: SliverList.list(
               children: [
-                const _NoStudyYet(),
+                if (state.study case final study?)
+                  _StudyAttached(study)
+                else
+                  const _NoStudyYet(),
                 SectionHeader(
                   'Choose a study',
                   subtitle: invitations == null
                       ? 'Asking CAWS for your invitations.'
-                      : '${invitations.length} invitations from CAWS. '
-                            'Accepting one attaches its study to reports.',
+                      : '${countOf(invitations.length, 'invitation')} from '
+                            'CAWS. Accepting one attaches its study to '
+                            'reports.',
                 ),
                 if (error != null)
                   ErrorBanner(
@@ -97,6 +111,79 @@ class InvitationsScreen extends StatelessWidget {
                         onAccept: () => _accept(context, invitation),
                       ),
                     ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// what GlitchTip sees once an invitation is accepted, also when loading
+// its protocol failed
+class _StudyAttached extends StatelessWidget {
+  const _StudyAttached(this.study);
+
+  final StudyMetadata study;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = M3ETheme.of(context);
+    final scheme = theme.colorScheme;
+    final state = ExampleScope.watch(context).state;
+    return SectionCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ShapeIcon(
+            M3EIcons.verified_outlined,
+            shape: IconShape.puffy,
+            color: scheme.primaryContainer,
+            iconColor: scheme.onPrimaryContainer,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'GlitchTip knows your study',
+                  style: theme.typography.emphasized.titleMedium.copyWith(
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Reports carry its ids and roles. Its protocol is added '
+                  'once it is loaded.',
+                  style: theme.typeScale.bodyMedium.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    InfoPill(
+                      '${AppState.onboardingTag}: ${state.onboarding.tag}',
+                      icon: M3EIcons.sell_outlined,
+                      tone: PillTone.secondary,
+                    ),
+                    if (study.studyId case final id?)
+                      InfoPill(
+                        '${GlitchTipTags.studyId}: $id',
+                        icon: M3EIcons.sell_outlined,
+                        tone: PillTone.secondary,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                M3EButton.text(
+                  onPressed: state.loadingProtocol ? null : state.leaveStudy,
+                  child: const Text('Leave study'),
+                ),
               ],
             ),
           ),
@@ -281,7 +368,8 @@ class _InvitationCard extends StatelessWidget {
                       icon: const Icon(M3EIcons.check),
                       label: const Text('Accept invitation'),
                       semanticLabel:
-                          'Accept the invitation to ${invitation.studyName}',
+                          'Accept the invitation to '
+                          '${invitation.studyName ?? 'this study'}',
                       onPressed: state.loadingProtocol ? null : onAccept,
                     ),
                   ),

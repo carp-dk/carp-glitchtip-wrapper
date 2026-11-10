@@ -119,7 +119,7 @@ class _TryItTabState extends State<TryItTab> {
       _Demo.personalData => await actions.reportPersonalData(),
       _Demo.expectedError => await actions.reportExpectedError(),
       _Demo.measureTask => await actions.measureTask(),
-      _Demo.openScreen => _openScreen(),
+      _Demo.openScreen => _openScreen(actions),
     };
     if (!mounted) return;
     setState(() {
@@ -128,19 +128,13 @@ class _TryItTabState extends State<TryItTab> {
     });
   }
 
-  ActionOutcome _openScreen() {
+  ActionOutcome _openScreen(TryItActions actions) {
     Navigator.of(context).pushNamed(
       ExampleRoutes.tasks,
-      // never recorded: the wrapper only records route names
+      // not recorded: the wrapper only records route names
       arguments: {'opened_from': 'try_it'},
     );
-    return const ActionOutcome(
-      OutcomeKind.info,
-      'Opened ${ExampleRoutes.tasks}',
-      'Recorded as a navigation breadcrumb. Reports from that screen carry '
-          'screen: ${ExampleRoutes.tasks}; route arguments are never '
-          'recorded.',
-    );
+    return actions.openedScreen(ExampleRoutes.tasks);
   }
 
   @override

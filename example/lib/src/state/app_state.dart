@@ -41,6 +41,10 @@ enum Onboarding {
 /// Every change goes through [notifyListeners], so the wrapper keeps the
 /// study in sync once `main()` called
 /// `CarpGlitchTip.bindStudy(state, () => state.study)`.
+///
+/// Every error it catches is shown and reported with
+/// `CarpGlitchTip.captureException`; the ignore rules drop the expected
+/// ones, e.g. while the phone is offline.
 class AppState extends ChangeNotifier {
   /// Creates the state of an app that talks to CAWS through [caws], in the
   /// sample CAWS [network] condition.
@@ -61,7 +65,8 @@ class AppState extends ChangeNotifier {
   bool _signingIn = false;
   Object? _signInError;
   List<ActiveParticipationInvitation>? _invitations;
-  bool _loadingInvitations = false;
+  // the session whose invitations are being loaded
+  CawsSession? _loadingInvitationsFor;
   Object? _invitationsError;
   ActiveParticipationInvitation? _invitation;
   StudyProtocolSummary? _protocol;
@@ -90,7 +95,7 @@ class AppState extends ChangeNotifier {
   List<ActiveParticipationInvitation>? get invitations => _invitations;
 
   /// Whether the invitations are being loaded.
-  bool get loadingInvitations => _loadingInvitations;
+  bool get loadingInvitations => _loadingInvitationsFor != null;
 
   /// Why loading the invitations failed, if it did.
   Object? get invitationsError => _invitationsError;
@@ -125,8 +130,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       await caws.signIn();
-    } catch (error) {
+    } catch (error, stackTrace) {
       _signInError = error;
+      _report(error, stackTrace);
       return false;
     } finally {
       _signingIn = false;
@@ -147,16 +153,22 @@ class AppState extends ChangeNotifier {
 
   /// Loads the participant's invitations from CAWS.
   Future<void> loadInvitations() async {
-    if (_loadingInvitations) return;
-    _loadingInvitations = true;
+    final session = caws.session;
+    if (session == null || identical(_loadingInvitationsFor, session)) return;
+    _loadingInvitationsFor = session;
     _invitationsError = null;
     notifyListeners();
     try {
-      _invitations = await caws.getActiveParticipationInvitations();
-    } catch (error) {
-      _invitationsError = error;
+      final invitations = await caws.getActiveParticipationInvitations();
+      // unless the participant signed out meanwhile
+      if (identical(caws.session, session)) _invitations = invitations;
+    } catch (error, stackTrace) {
+      if (identical(caws.session, session)) _invitationsError = error;
+      _report(error, stackTrace);
     } finally {
-      _loadingInvitations = false;
+      if (identical(_loadingInvitationsFor, session)) {
+        _loadingInvitationsFor = null;
+      }
       notifyListeners();
     }
   }
@@ -179,8 +191,10 @@ class AppState extends ChangeNotifier {
       if (!identical(_invitation, invitation)) return false; // left meanwhile
       _setStudy(invitation, protocol);
       return true;
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (identical(_invitation, invitation)) _protocolError = error;
+      // reported with the study: it was attached before the request
+      _report(error, stackTrace);
       return false;
     } finally {
       _loadingProtocol = false;
@@ -205,6 +219,10 @@ class AppState extends ChangeNotifier {
     // equal when it re-reads it for every report
     _study = invitation?.toGlitchTip(protocol: protocol);
   }
+
+  // the app does not wait for it; it never throws
+  void _report(Object error, StackTrace stackTrace) =>
+      unawaited(CarpGlitchTip.captureException(error, stackTrace: stackTrace));
 
   void _tagOnboarding() =>
       CarpGlitchTip.setTags({onboardingTag: onboarding.tag});

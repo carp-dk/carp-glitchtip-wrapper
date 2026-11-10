@@ -4,6 +4,8 @@
 // - `WelcomeScreen`, with the CARP x DTU logo, what the example shows, where
 //   reports go, and the sign-in button.
 
+import 'dart:math' as math;
+
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
@@ -26,8 +28,12 @@ class WelcomeScreen extends StatelessWidget {
   Future<void> _signIn(BuildContext context) async {
     final navigator = Navigator.of(context);
     final signedIn = await ExampleScope.read(context).state.signIn();
+    // replaces everything, also a status sheet opened while signing in
     if (signedIn) {
-      await navigator.pushReplacementNamed(ExampleRoutes.invitations);
+      await navigator.pushNamedAndRemoveUntil(
+        ExampleRoutes.invitations,
+        (_) => false,
+      );
     }
   }
 
@@ -141,33 +147,37 @@ class _Hero extends StatelessWidget {
       child: Container(
         height: 236,
         color: scheme.surfaceContainerLow,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            PositionedDirectional(
-              top: -28,
-              end: -20,
-              child: ShapeIcon(
-                M3EIcons.monitor_heart,
-                shape: IconShape.sunny,
-                size: 132,
-                color: scheme.tertiaryContainer,
-                iconColor: scheme.onTertiaryContainer,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            alignment: Alignment.center,
+            children: [
+              PositionedDirectional(
+                top: -28,
+                end: -20,
+                child: ShapeIcon(
+                  M3EIcons.monitor_heart,
+                  shape: IconShape.sunny,
+                  size: 132,
+                  color: scheme.tertiaryContainer,
+                  iconColor: scheme.onTertiaryContainer,
+                ),
               ),
-            ),
-            PositionedDirectional(
-              bottom: 14,
-              start: 18,
-              child: ShapeIcon(
-                M3EIcons.science,
-                shape: IconShape.clover8,
-                size: 72,
-                color: scheme.primaryContainer,
-                iconColor: scheme.onPrimaryContainer,
+              PositionedDirectional(
+                bottom: 4,
+                start: -4,
+                child: ShapeIcon(
+                  M3EIcons.science,
+                  shape: IconShape.clover8,
+                  size: 72,
+                  color: scheme.primaryContainer,
+                  iconColor: scheme.onPrimaryContainer,
+                ),
               ),
-            ),
-            const BrandLogo(height: 88),
-          ],
+              // smaller on a small phone, so it does not cover the icons of
+              // the shapes in the corners
+              BrandLogo(height: math.min(88, constraints.maxWidth * 0.22)),
+            ],
+          ),
         ),
       ),
     );

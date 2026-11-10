@@ -41,12 +41,15 @@ extension InvitationGlitchTip on ActiveParticipationInvitation {
     participantRoleName: participantRoleName,
     // searchable: only a few values with a low cardinality
     tags: {protocolTag: ?protocol?.name},
-    // shown on every report, not searchable
+    // shown on every report, not searchable; plain values, no lists: the
+    // wrapper compares studies with mapEquals, which compares lists by
+    // identity, and would update its scope for every new mapping
     context: {
       'study_name': ?studyName,
       if (protocol != null) ...{
         'protocol': protocol.name,
-        'devices': [for (final device in protocol.devices) device.roleName],
+        'devices': [for (final device in protocol.devices) device.roleName]
+            .join(', '),
         'tasks': protocol.taskCount,
       },
     },

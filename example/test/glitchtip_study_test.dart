@@ -49,7 +49,7 @@ void main() {
       expect(study.toContext(), {
         'study_name': 'CAMS App - Demo Study',
         'protocol': 'CAMS App - Demo Study Protocol',
-        'devices': ['Primary Phone', 'eSense'],
+        'devices': 'Primary Phone, eSense',
         'tasks': 2,
         'study_id': 'study-1',
         'study_deployment_id': 'deployment-1',

@@ -107,7 +107,7 @@ The same information is available as `CarpGlitchTip.status`, e.g. for an about o
 
 ## Usage
 
-Import `package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart`. Everything goes through the static `CarpGlitchTip` facade, configured with `CarpGlitchTipOptions`. All methods are safe to call at any time, and the wrapper's own failures never throw.
+Import `package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart`. Everything goes through the static `CarpGlitchTip` facade, configured with `CarpGlitchTipOptions`. All methods are safe to call at any time, and the wrapper's own failures will not throw.
 
 ### Configuration
 
@@ -217,7 +217,7 @@ CarpGlitchTip.bindStudy(bloc, () => bloc.study?.toGlitchTip());
 
 Apps without CARP Mobile Sensing can map carp_core's `ActiveParticipationInvitation` the same way: it has `studyId`, `studyDeploymentId`, `deviceRoleName`, `participantRoleName` and `studyName`.
 
-Or set the study explicitly with `CarpGlitchTip.setStudy(...)` and `CarpGlitchTip.clearStudy()`. Values set before `init` are kept and applied at init. Never put the participant id, names or e-mail addresses into the study: a study deployment id already is a pseudonym of the participant.
+Or set the study explicitly with `CarpGlitchTip.setStudy(...)` and `CarpGlitchTip.clearStudy()`. Values set before `init` are kept and applied at init. Do not put the participant id, names or e-mail addresses into the study: a study deployment id already is a pseudonym of the participant.
 
 Add other information with `CarpGlitchTip.setTags({...})` (searchable) and `CarpGlitchTip.setContext('name', {...})` (shown on each report). Keys the Sentry SDK or the wrapper own (`app`, `device`, `os`, `study`, ...) are ignored. Tags and contexts are sent as given, so keep personal data out of them.
 
@@ -241,7 +241,7 @@ Inside `runZoned`, every request made with `package:http` is recorded:
 * When sampled (`GLITCHTIP_HTTP_SAMPLE_RATE`), a **transaction** named after the request, e.g. `GET cans.cachet.dk/api/studies/{uuid}/files`. Ids in paths become placeholders, so GlitchTip groups the requests per endpoint. CARP Web Services RPC calls are named after their operation, e.g. `POST cans.cachet.dk/api/deployment-service GetStudyDeploymentStatus`.
 * An **error event** when a request fails unexpectedly: a 5xx response, or an exception that is not ignored (e.g. a refused connection or a TLS error). The same failure is reported at most once per 10 minutes, so the 15 retries of a `carp_webservices` call do not flood GlitchTip.
 
-Recording never changes a request: the response or the original exception reaches the caller unchanged.
+Recording does not change a request: the response or the original exception reaches the caller unchanged.
 
 ```dart
 await CarpGlitchTip.init(
@@ -305,7 +305,7 @@ Native crashes and ANRs are reported by the native SDKs directly; Dart rules do 
 
 ### Navigation
 
-Add an observer to every navigator, e.g. to `GoRouter(observers: [...])` and to each `ShellRoute(observers: [...])`. Navigation is recorded as breadcrumbs (route names only, never arguments), and the current route becomes the `screen` tag. A route seen by several observers is recorded once.
+Add an observer to every navigator, e.g. to `GoRouter(observers: [...])` and to each `ShellRoute(observers: [...])`. Navigation is recorded as breadcrumbs (route names only, no arguments), and the current route becomes the `screen` tag. A route seen by several observers is recorded once.
 
 ```dart
 GoRouter(observers: [CarpGlitchTip.navigatorObserver()], routes: [...]);
@@ -329,7 +329,7 @@ The wrapper applies a privacy policy suitable for health research, also when an 
 A study deployment id is a pseudonym of a participant: treat GlitchTip data as pseudonymised personal data in the study's DPIA.
 
 > [!IMPORTANT]
-> Native crash, ANR and app-hang reports are created by the native SDKs and never pass Dart code. They carry the scope (study tags, the per-launch user) and the breadcrumbs above, but also:
+> Native crash, ANR and app-hang reports are created by the native SDKs and won't pass Dart code. They carry the scope (study tags, the per-launch user) and the breadcrumbs above, but also:
 >
 > * on Android, the device context with the persistent installation id;
 > * on iOS, the vendor hash in the app context;
@@ -381,7 +381,9 @@ test('my rules drop expected errors only', () async {
 });
 ```
 
-Events and transactions of HTTP requests are captured in the background, so wait a moment before asserting on them. The [example app's tests](example/test) go through a whole sign-in, invitation and study flow this way.
+Events and transactions of HTTP requests are captured in the background, so wait a moment before asserting on them.
+
+To test the app's own HTTP requests too, e.g. those of `carp_webservices`, run the widget test's body in `CarpGlitchTip.runZoned` as `main()` does, with a fake backend as `innerClient`. A widget test runs in fake time, where the Sentry SDK's own async work does not finish: call `init` inside `tester.runAsync`, and wait for reports by alternating `tester.runAsync` with `tester.pump`, as the example's `startApp` and `pumpUntil` do. Under `flutter test`, an error escaping the body (such as a failed expectation) is rethrown at once, so the test fails instead of waiting for its report. The [example app's tests](example/test) go through a whole sign-in, invitation and study flow this way.
 
 ## Migrating a CARP app
 
@@ -410,9 +412,9 @@ Events and transactions of HTTP requests are captured in the background, so wait
 
 ## Example app
 
-The [`example/`](example) folder contains a CARP-style app that goes through the usual participant flow against a sample CARP Web Services backend built into the app: sign in, accept a study invitation, load the study protocol, and use the study. On the way it shows what the wrapper attaches to reports, and lets you try what is reported and what is ignored: caught and unhandled errors, offline and failing uploads, scrubbed personal data and traced tasks. The sample invitations and protocol come from the public [CARP Mobile Sensing](https://github.com/carp-dk/carp.sensing-flutter) repository.
+The [`example/`](example) folder contains a CARP-style app that goes through the usual participant flow against a sample CARP Web Services backend built into the app: sign in, accept a study invitation, load the study protocol, and use the study. On the way it shows what the wrapper attaches to reports, and lets you try what is reported and what is ignored: caught and unhandled errors, offline and failing uploads, an error with an e-mail address and a token (both scrubbed) and traced tasks. The sample invitations and protocol come from the public [CARP Mobile Sensing](https://github.com/carp-dk/carp.sensing-flutter) repository.
 
-Without a DSN it runs in a preview mode that keeps the reports on the device and shows them in the app, exactly as they would be sent. To report to GlitchTip, call `flutter run` from `example/` with `--dart-define=GLITCHTIP_DSN=...` (and `--dart-define=GLITCHTIP_ENABLED=true` in debug builds). The example needs Flutter 3.47 or later, as it uses the [`material_ui`](https://pub.dev/packages/material_ui) and [`material_3_expressive`](https://pub.dev/packages/material_3_expressive) packages.
+Without a DSN it runs in a preview mode that keeps the reports on the device and shows them in the app as GlitchTip would get them (except the native SDK's own reports, e.g. of native crashes). To report to GlitchTip, call `flutter run` from `example/` with `--dart-define=GLITCHTIP_DSN=...` (and `--dart-define=GLITCHTIP_ENABLED=true` in debug builds, where the trace and HTTP sample rates are 0 unless set). The example needs Flutter 3.47 or later, as it uses the [`material_ui`](https://pub.dev/packages/material_ui) and [`material_3_expressive`](https://pub.dev/packages/material_3_expressive) packages.
 
 | Sign in | Invitations | Study |
 |:---:|:---:|:---:|
