@@ -224,6 +224,9 @@ class GlitchTipRuntime {
     o.tracePropagationTargets
       ..clear()
       ..addAll(httpOptions.tracePropagationTargets);
+    // the SDK puts the raw name of a transaction into the trace header of
+    // the envelopes, before any hook could scrub it
+    o.addIntegrationByIndex(0, _TraceHeaderIntegration());
 
     if (o.ignoreErrors.isNotEmpty) {
       debugWarn(
@@ -805,6 +808,67 @@ class _EarlyProcessor implements EventProcessor {
       debugWarn('processing an event failed: $error', once: true);
       return event;
     }
+  }
+}
+
+/// Wraps the SDK's transport in a [_TraceHeaderTransport]. Added as the
+/// first integration: the SDK has set up its transport by then, and reads
+/// it on every send.
+class _TraceHeaderIntegration implements Integration<SentryFlutterOptions> {
+  @override
+  FutureOr<void> call(Hub hub, SentryFlutterOptions options) {
+    options.transport = _TraceHeaderTransport(options.transport);
+  }
+
+  @override
+  FutureOr<void> close() {}
+}
+
+/// Removes the transaction name from the trace header of each envelope,
+/// i.e. from Sentry's dynamic sampling context, which GlitchTip does not
+/// use. The SDK takes it from the raw name of a transaction (also one an
+/// app binds to the scope), before any hook could scrub it.
+class _TraceHeaderTransport implements Transport {
+  _TraceHeaderTransport(this.inner);
+
+  final Transport inner;
+
+  @override
+  Future<SentryId?> send(SentryEnvelope envelope) => inner.send(
+    guard<SentryEnvelope?>('scrubbing a trace header', () {
+          return _withoutName(envelope);
+        }) ??
+        envelope,
+  );
+
+  static SentryEnvelope _withoutName(SentryEnvelope envelope) {
+    final header = envelope.header;
+    final trace = header.traceContext;
+    final eventId = header.eventId;
+    final sdk = header.sdkVersion;
+    if (trace == null || eventId == null || sdk == null) return envelope;
+    if (trace.transaction == null && trace.userId == null) return envelope;
+    // the header type is not public: built through a public factory
+    final scrubbed = SentryEnvelope.fromEvent(
+      SentryEvent(eventId: eventId),
+      sdk,
+      dsn: header.dsn,
+      traceContext: SentryTraceContextHeader(
+        trace.traceId,
+        trace.publicKey,
+        release: trace.release,
+        environment: trace.environment,
+        sampleRate: trace.sampleRate,
+        sampleRand: trace.sampleRand,
+        sampled: trace.sampled,
+        orgId: trace.orgId,
+      ),
+    ).header..sentAt = header.sentAt;
+    return SentryEnvelope(
+      scrubbed,
+      envelope.items,
+      containsUnhandledException: envelope.containsUnhandledException,
+    );
   }
 }
 

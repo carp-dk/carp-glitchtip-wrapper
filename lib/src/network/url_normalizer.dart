@@ -115,6 +115,12 @@ String normalizePathSegment(String segment) {
   if (segment.isEmpty) return segment;
   // all patterns are linear, but there is no point in scanning huge segments
   if (segment.length > _maxInspectedLength) return '{long}';
+  // placeholders (e.g. the `{mac}` of the privacy policy, or those of a
+  // path template) keep their braces, which Uri.parse encodes, so
+  // normalising again gives the same text
+  if (segment.contains('%')) {
+    segment = segment.replaceAllMapped(_encodedPlaceholder, (m) => '{${m[1]}}');
+  }
   final braced = _braced.firstMatch(segment);
   if (braced != null) {
     final inner = braced[1]!;
@@ -122,13 +128,7 @@ String normalizePathSegment(String segment) {
     final normalized = _identifier(inner);
     return normalized ?? '{$inner}';
   }
-  final identifier = _identifier(segment);
-  if (identifier != null) return identifier;
-  // e.g. the `{mac}` of the privacy policy: with its braces, so normalising
-  // again gives the same text
-  return segment.contains('%')
-      ? segment.replaceAllMapped(_encodedPlaceholder, (m) => '{${m[1]}}')
-      : segment;
+  return _identifier(segment) ?? segment;
 }
 
 // the placeholder for an id-like segment, or null

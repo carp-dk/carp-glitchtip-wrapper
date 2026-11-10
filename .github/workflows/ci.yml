@@ -17,10 +17,12 @@ permissions:
 
 env:
   # Minimum supported toolchain: sentry_flutter 10 requires Flutter 3.44.0
-  # (Dart 3.12), so that is the floor we build and test against.
+  # (Dart 3.12), so that is the floor the package is tested against.
   FLUTTER_VERSION: "3.44.0"
+  # The example app uses material_ui, which requires Flutter 3.47 (Dart 3.13).
+  # Analysis walks into example/, so it runs on this version too.
+  EXAMPLE_FLUTTER_VERSION: "3.47.8"
   FLUTTER_CHANNEL: "stable"
-  JAVA_VERSION: "17"
 
 # Third-party actions are pinned to full commit SHAs (with a version comment) for
 # supply-chain safety; the trailing `# vX` keeps Dependabot bumping them cleanly.
@@ -32,7 +34,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ env.EXAMPLE_FLUTTER_VERSION }}
           channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
       - name: Install dependencies
@@ -71,9 +73,10 @@ jobs:
           channel: ${{ matrix.channel }}
           cache: true
       - name: Install dependencies
-        run: flutter pub get
+        # Not the example's: it needs a newer Flutter than the package floor.
+        run: flutter pub get --no-example
       - name: Run tests with coverage
-        run: flutter test --coverage
+        run: flutter test --no-pub --coverage
       - name: Upload coverage report
         if: matrix.version == '3.44.0'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -82,38 +85,18 @@ jobs:
           path: coverage/lcov.info
           if-no-files-found: warn
 
-  build-android:
-    name: Build Android example
+  test-example:
+    name: Test example
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ env.EXAMPLE_FLUTTER_VERSION }}
           channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
-      - name: Build debug APK
+      - name: Run the example's tests
         working-directory: example
         run: |
           flutter pub get
-          flutter build apk --debug
-
-  build-ios:
-    name: Build iOS example
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: ${{ env.FLUTTER_CHANNEL }}
-          cache: true
-      - name: Build iOS app (no code signing)
-        working-directory: example
-        run: |
-          flutter pub get
-          flutter build ios --debug --no-codesign
+          flutter test

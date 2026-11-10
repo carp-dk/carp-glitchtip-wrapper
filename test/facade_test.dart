@@ -615,6 +615,7 @@ void main() {
           studyId: 's1',
           studyDeploymentId: 'd1',
           deviceRoleName: 'Primary phone',
+          participantRoleName: 'Mother',
           tags: {'site': 'cph', 'study_id': 'not-the-id'},
           context: {'protocol': 'sleep'},
         ),
@@ -625,13 +626,85 @@ void main() {
       expect(event.tags, containsPair('study_id', 's1'));
       expect(event.tags, containsPair('study_deployment_id', 'd1'));
       expect(event.tags, containsPair('device_role', 'Primary phone'));
+      expect(event.tags, containsPair('participant_role', 'Mother'));
       expect(event.tags, containsPair('site', 'cph'));
       expect(event.contexts['study'], {
         'study_id': 's1',
         'study_deployment_id': 'd1',
         'device_role': 'Primary phone',
+        'participant_role': 'Mother',
         'protocol': 'sleep',
       });
+    });
+
+    test('a study known only after sign-in is attached from then on, and '
+        'protocol details added later keep the breadcrumbs', () async {
+      await start();
+      // before sign-in and before an invitation was accepted
+      CarpGlitchTip.addBreadcrumb(Breadcrumb(message: 'signed in'));
+      await CarpGlitchTip.captureMessage('before the invitation');
+      // the invitation was accepted
+      CarpGlitchTip.setStudy(
+        const StudyMetadata(
+          studyId: 's1',
+          studyDeploymentId: 'd1',
+          deviceRoleName: 'Primary phone',
+          participantRoleName: 'Participant',
+        ),
+      );
+      CarpGlitchTip.addBreadcrumb(Breadcrumb(message: 'invitation accepted'));
+      // the deployment and its protocol were loaded: same deployment
+      CarpGlitchTip.setStudy(
+        const StudyMetadata(
+          studyId: 's1',
+          studyDeploymentId: 'd1',
+          deviceRoleName: 'Primary phone',
+          participantRoleName: 'Participant',
+          context: {'protocol': 'CAMS App - Demo Study Protocol'},
+        ),
+      );
+      await CarpGlitchTip.captureMessage('in the study');
+
+      final [before, during] = transport.events;
+      for (final key in GlitchTipTags.all.where((k) => k.contains('_role'))) {
+        expect(before.tags, isNot(contains(key)));
+      }
+      expect(before.tags, isNot(contains('study_deployment_id')));
+      expect(before.contexts['study'], isNull);
+      expect(during.tags, containsPair('participant_role', 'Participant'));
+      expect(
+        during.contexts['study'],
+        containsPair('protocol', 'CAMS App - Demo Study Protocol'),
+      );
+      // the same deployment: the breadcrumbs from before are kept
+      expect(
+        during.breadcrumbs!.map((b) => b.message),
+        containsAll(['signed in', 'invitation accepted']),
+      );
+    });
+
+    test('a changed participant role of the same deployment is applied', () {
+      const mother = StudyMetadata(
+        studyDeploymentId: 'd1',
+        participantRoleName: 'Mother',
+      );
+      const father = StudyMetadata(
+        studyDeploymentId: 'd1',
+        participantRoleName: 'Father',
+      );
+      expect(mother, isNot(father));
+      expect(
+        mother,
+        const StudyMetadata(
+          studyDeploymentId: 'd1',
+          participantRoleName: 'Mother',
+        ),
+      );
+      CarpGlitchTip.setStudy(mother);
+      CarpGlitchTip.setStudy(father);
+      expect(CarpGlitchTip.study?.participantRoleName, 'Father');
+      expect(father.toTags(), containsPair('participant_role', 'Father'));
+      expect(father.toString(), contains('participantRoleName: Father'));
     });
 
     test('clearStudy removes the study and its breadcrumbs', () async {
@@ -657,7 +730,12 @@ void main() {
         contains('during the study'),
       );
       expect(CarpGlitchTip.study, isNull);
-      for (final key in ['study_id', 'study_deployment_id', 'device_role']) {
+      for (final key in [
+        'study_id',
+        'study_deployment_id',
+        'device_role',
+        'participant_role',
+      ]) {
         expect(after.tags, isNot(contains(key)));
       }
       expect(after.contexts['study'], isNull);

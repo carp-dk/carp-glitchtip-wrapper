@@ -12,6 +12,10 @@ abstract final class GlitchTipTags {
   /// `StudyMetadata.deviceRoleName`.
   static const deviceRole = 'device_role';
 
+  /// The role of the participant in the study, see
+  /// `StudyMetadata.participantRoleName`.
+  static const participantRole = 'participant_role';
+
   /// The Flutter build mode: `debug`, `profile` or `release`.
   static const buildMode = 'build_mode';
 
@@ -39,6 +43,7 @@ abstract final class GlitchTipTags {
     studyId,
     studyDeploymentId,
     deviceRole,
+    participantRole,
     buildMode,
     deploymentMode,
     screen,

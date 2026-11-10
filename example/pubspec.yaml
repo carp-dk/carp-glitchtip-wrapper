@@ -1,11 +1,13 @@
 name: carp_glitchtip_wrapper_example
-description: "Example app of carp_glitchtip_wrapper."
+description: >-
+  Example app of carp_glitchtip_wrapper: a CARP study app that signs in,
+  accepts a study invitation and reports to GlitchTip.
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.12.0
-  flutter: ">=3.44.0"
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
 
 dependencies:
   flutter:
@@ -14,12 +16,30 @@ dependencies:
   carp_glitchtip_wrapper:
     path: ../
 
+  # what CARP packages such as carp_webservices use to talk to CAWS
   http: ^1.5.0
+
+  # the decoupled Material library and the Material 3 Expressive components
+  material_ui: ^1.10.0
+  material_3_expressive: ^1.2.0
+
+  # the CARP x DTU logo
+  flutter_svg: ^2.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_driver:
+    sdk: flutter
   flutter_lints: ^6.0.0
 
 flutter:
+  # the MaterialIcons font, used by M3EIcons and Icons
   uses-material-design: true
+
+  assets:
+    - assets/carp/
+    - assets/carp/protocols/
+    - assets/images/

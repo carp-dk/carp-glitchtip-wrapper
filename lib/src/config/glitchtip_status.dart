@@ -6,8 +6,9 @@ enum DisabledReason {
   notInitialized('init() has not been called'),
 
   /// The Sentry SDK is still starting after `CarpGlitchTipOptions.initTimeout`.
-  /// Errors are already reported; HTTP requests and `CarpGlitchTip.trace`
-  /// are recorded, and `CarpGlitchTip.isEnabled` is true, once it is done.
+  /// Errors are already reported. HTTP requests, `CarpGlitchTip.trace`,
+  /// navigation breadcrumbs and the screen tag are recorded, and
+  /// `CarpGlitchTip.isEnabled` is true, once it is done.
   starting('the Sentry SDK is still starting'),
 
   /// A debug build, where reporting is off by default.
@@ -76,7 +77,7 @@ final class GlitchTipStatus {
   /// ([DisabledReason.starting]), although errors are already sent then.
   final bool enabled;
 
-  /// Why events are not sent, when [enabled] is false.
+  /// Why reporting is not (fully) on, when [enabled] is false.
   final DisabledReason? disabledReason;
 
   /// More about [disabledReason], e.g. what is wrong with the DSN.

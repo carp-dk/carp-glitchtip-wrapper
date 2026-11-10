@@ -284,8 +284,9 @@ abstract final class CarpGlitchTip {
     );
   }
 
-  /// Whether errors are reported to GlitchTip. False while the Sentry SDK
-  /// is still starting, see [DisabledReason.starting].
+  /// Whether the Sentry SDK has started and everything is reported: errors,
+  /// requests, traces and navigation. While the SDK is still starting
+  /// (see [DisabledReason.starting]), errors are already reported.
   static bool get isEnabled => GlitchTipRuntime.current?.active ?? false;
 
   // also while the SDK is still starting: it already reports unhandled
@@ -409,7 +410,7 @@ abstract final class CarpGlitchTip {
       final end = DateTime.now().toUtc();
       guard('recording a trace', () {
         runtime.recordTransaction(
-          name: runtime.privacy.text(name),
+          name: runtime.privacy.transactionName(name),
           operation: operation,
           decision: decision,
           start: start,

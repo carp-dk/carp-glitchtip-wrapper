@@ -42,11 +42,15 @@ class Privacy {
   // punctuation after a URL, which is not part of it
   static const _trailing = '.,;:!?';
   static final _queryStart = RegExp('[?#]');
-  // the user info of a URL with another scheme, e.g. ftp://user:password@
+  // the user info of a URL with another scheme, e.g. ftp://user:password@,
+  // up to the last @ of the authority (a password may contain one)
   static final _userInfo = RegExp(
-    r'^([a-z][a-z0-9+.-]*:/{1,3})[^/@?#]*@',
+    r'^([a-z][a-z0-9+.-]*:/{1,3})[^/?#]*@',
     caseSensitive: false,
   );
+  // JSON escapes of & = ? # @ (Go, .NET and Gson escape some of them), so
+  // URLs, parameters and e-mail addresses are recognised
+  static final _unicodeEscape = RegExp(r'\\u00(26|3[dDfF]|23|40)');
   // only at the start of a token run: linear time on long base64 text
   static final _jwt = RegExp(
     r'(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*',
@@ -73,6 +77,16 @@ class Privacy {
     '[^&\\s#"\']+',
     caseSensitive: false,
   );
+  // the same names in `name: value` form (Dart's Map.toString, toString()s
+  // such as carp_webservices' OAuthToken, also camelCase), and a quoted
+  // password=; values that are placeholders already are skipped
+  static final _namedSecret = RegExp(
+    '((?<![A-Za-z0-9_])'
+    '(?:(?:access_?token|refresh_?token|id_?token|client_?secret)'
+    '(?:\\s*:\\s*|=)["\']?|password=["\']))'
+    '(?!\\{)[^\\s,;}&"\']+',
+    caseSensitive: false,
+  );
   // the value may contain escaped quotes
   static final _jsonSecret = RegExp(
     r'("(?:access_token|refresh_token|id_token|client_secret|password)"\s*:\s*")'
@@ -80,21 +94,22 @@ class Privacy {
     caseSensitive: false,
   );
   // the same in JSON inside a JSON string, e.g. in the message of a
-  // PlatformException
+  // PlatformException; an escape of the inner string is an escaped
+  // backslash followed by one outer character or escape
   static final _escapedJsonSecret = RegExp(
     r'(\\"(?:access_token|refresh_token|id_token|client_secret|password)\\"'
-    r'\s*:\s*\\")(?:[^"\\]|\\[^"])*\\"',
+    r'\s*:\s*\\")(?:\\\\(?:\\.|[^\\])|\\[^"\\]|[^"\\])*\\"',
     caseSensitive: false,
   );
-  // a run of hex byte pairs: six with one separator are a hardware address
-  // (e.g. of a BLE wearable, a persistent id), longer runs are hex dumps
+  // a run of hex byte pairs, which can hold hardware addresses (e.g. of a
+  // BLE wearable, a persistent id), see [_macs]
   static final _hexPairs = RegExp(
     r'(?<![0-9A-Za-z])[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5,}(?![0-9A-Za-z])',
   );
   static final _whiteSpace = RegExp(r'\s');
-  // bounded, so the fallback stays linear on long values
+  // linear: a URL, and each white-space-free run that contains an @
   static final _coarseUrl = RegExp(r'\b[A-Za-z][\w+.-]{0,31}:/\S*');
-  static final _coarseEmail = RegExp(r'[^\s@]{1,64}(?:@|%40)[^\s@]{1,255}');
+  static final _coarseEmail = RegExp(r'(?<!\S)\S*?(?:@|%40)\S*');
 
   /// Breadcrumb categories of the native SDKs that describe the
   /// participant's behaviour (screen on/off, charging, connectivity, ...).
@@ -113,6 +128,12 @@ class Privacy {
   String text(String input) {
     var text = _cap(input);
     if (text.contains(r':\/')) text = text.replaceAll(r'\/', '/');
+    if (text.contains(r'\u00')) {
+      text = text.replaceAllMapped(
+        _unicodeEscape,
+        (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
+      );
+    }
     if (text.contains(':/')) text = text.replaceAllMapped(_url, _urlMatch);
     if (text.contains('eyJ')) text = text.replaceAll(_jwt, '{jwt}');
     text = text.replaceAllMapped(_bearer, (match) => '${match[1]} {token}');
@@ -121,6 +142,9 @@ class Privacy {
     }
     if (text.contains('=')) {
       text = text.replaceAllMapped(_querySecret, (m) => '${m[1]}{redacted}');
+    }
+    if (text.contains('=') || text.contains(':')) {
+      text = text.replaceAllMapped(_namedSecret, (m) => '${m[1]}{redacted}');
     }
     if (text.contains('"')) {
       text = text.replaceAllMapped(_jsonSecret, (m) => '${m[1]}{redacted}"');
@@ -131,9 +155,15 @@ class Privacy {
         );
       }
     }
-    text = text.replaceAllMapped(_hexPairs, _mac);
+    text = text.replaceAllMapped(_hexPairs, _macs);
     return _cap(redactCawsPaths(text));
   }
+
+  /// A transaction [name] as sent: a route name (e.g. of a navigation
+  /// transaction) without its query and fragment, as the screen tag, and
+  /// then scrubbed as [text].
+  String transactionName(String name) =>
+      text(name.startsWith('/') ? name.split(_queryStart).first : name);
 
   String _urlMatch(Match match) {
     final found = match[0]!;
@@ -167,10 +197,36 @@ class Privacy {
     return '$kept$tail';
   }
 
-  // exactly six pairs with one kind of separator
-  static String _mac(Match match) {
+  // A hardware address is a stretch of exactly six pairs joined by one kind
+  // of separator, also when glued to other pairs with another separator;
+  // longer stretches are hex dumps and kept. Pair i starts at 3 * i, and
+  // the separator after it is at 3 * i + 2.
+  static String _macs(Match match) {
     final run = match[0]!;
-    return run.length == 17 && run.split(run[2]).length == 6 ? '{mac}' : run;
+    final count = (run.length + 1) ~/ 3;
+    final addresses = <(int, int)>[];
+    var start = 0;
+    while (start < count - 1) {
+      final separator = run[3 * start + 2];
+      var end = start;
+      while (end < count - 1 && run[3 * end + 2] == separator) {
+        end++;
+      }
+      // pairs start..end, joined by equal separators
+      final overlaps = addresses.isNotEmpty && addresses.last.$2 >= start;
+      if (end - start == 5 && !overlaps) addresses.add((start, end));
+      start = end;
+    }
+    if (addresses.isEmpty) return run;
+    final scrubbed = StringBuffer();
+    var next = 0;
+    for (final (first, last) in addresses) {
+      scrubbed
+        ..write(run.substring(next, 3 * first))
+        ..write('{mac}');
+      next = 3 * last + 2;
+    }
+    return (scrubbed..write(run.substring(next))).toString();
   }
 
   // cut at a white space near the limit, so no URL or placeholder is cut
@@ -429,14 +485,7 @@ class Privacy {
         transaction.request = null;
       }
       final name = transaction.transaction;
-      if (name != null) {
-        // a route name (e.g. of a navigation transaction) loses its query
-        // and fragment, as the screen tag does
-        final route = name.startsWith('/')
-            ? name.split(_queryStart).first
-            : name;
-        transaction.transaction = text(route);
-      }
+      if (name != null) transaction.transaction = transactionName(name);
       return transaction;
     } catch (error) {
       debugWarn('scrubbing a transaction failed: $error', once: true);
@@ -466,8 +515,11 @@ class Privacy {
     return log;
   }
 
-  /// Applies the policy to the attributes of a [metric].
+  /// Applies the policy to a [metric]: its name, unit and attributes.
   SentryMetric metric(SentryMetric metric) {
+    metric.name = text(metric.name);
+    final unit = metric.unit;
+    if (unit != null) metric.unit = text(unit);
     metric.attributes = _attributes(metric.attributes);
     return metric;
   }

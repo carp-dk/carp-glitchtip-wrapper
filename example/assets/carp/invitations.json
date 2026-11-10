@@ -1,0 +1,56 @@
+[
+    {
+        "participation": {
+            "studyDeploymentId": "bf19ced6-7ede-47a9-ad87-c83a6ac8c600",
+            "participantId": "e128a946-2177-4c4d-8c6c-c223a0daef2a",
+            "assignedRoles": {
+                "__type": "dk.cachet.carp.common.application.users.AssignedTo.Roles",
+                "roleNames": [
+                    "Participant"
+                ]
+            }
+        },
+        "invitation": {
+            "name": "CAMS App - Demo Study",
+            "description": "A study demonstrating most measures and probes. Used for the demo app.",
+            "applicationData": "25a7225a-6c6f-4990-a7c0-8b1da3edb5b4"
+        },
+        "assignedDevices": [
+            {
+                "device": {
+                    "__type": "dk.cachet.carp.common.application.devices.Smartphone",
+                    "roleName": "Primary Phone",
+                    "isPrimaryDevice": true
+                }
+            }
+        ]
+    },
+    {
+        "participation": {
+            "studyDeploymentId": "58ce18ff-40e3-4cd0-9fba-fc893d784891",
+            "participantId": "264bf3dc-b6c8-4252-b44e-2c5e00262ce9",
+            "assignedRoles": {
+                "__type": "dk.cachet.carp.common.application.users.AssignedTo.Roles",
+                "roleNames": [
+                    "Mother"
+                ]
+            }
+        },
+        "invitation": {
+            "name": "Family Study w. Participant Data",
+            "description": "Each family member joins with their own phone. Collects input from the father, the mother and the child.",
+            "applicationData": {
+                "studyId": "d6d047d5-4cfd-479b-87ac-99f4b5fee172"
+            }
+        },
+        "assignedDevices": [
+            {
+                "device": {
+                    "__type": "dk.cachet.carp.common.application.devices.Smartphone",
+                    "roleName": "Mother's Phone",
+                    "isPrimaryDevice": true
+                }
+            }
+        ]
+    }
+]

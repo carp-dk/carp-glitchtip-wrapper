@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:carp_glitchtip_wrapper/carp_glitchtip_wrapper.dart';
+import 'package:carp_glitchtip_wrapper/src/network/url_normalizer.dart';
 import 'package:carp_glitchtip_wrapper/src/pipeline/privacy.dart';
 import 'package:carp_glitchtip_wrapper/testing.dart';
 import 'package:flutter/material.dart';
@@ -931,5 +932,187 @@ void main() {
         expect(transport.transactions.single.transaction, '/study/42');
       },
     );
+  });
+
+  group('round 4', () {
+    // Checks [input] scrubs to [expected], and [expected] to itself.
+    void scrubs(String input, String expected) {
+      expect(privacy.text(input), expected, reason: input);
+      expect(privacy.text(expected), expected, reason: 'again: $expected');
+    }
+
+    test('no trace header carries the name of a transaction', () async {
+      await init(tracesSampleRate: 1);
+      // bound to the scope, so the error event carries its trace header too
+      final bound = Sentry.startTransaction(
+        '/study/42?code=SECRETCODE#top',
+        'navigation',
+        bindToScope: true,
+      );
+      await CarpGlitchTip.captureException(StateError('boom'));
+      await bound.finish();
+      final unbound = Sentry.startTransaction(
+        'upload jane@example.com',
+        'task',
+        bindToScope: false,
+      );
+      await unbound.finish();
+      await CarpGlitchTip.trace('/study/42?participant=jane-doe#x', () {});
+      await eventually(() => transport.transactions.length == 3);
+
+      expect(transport.events, hasLength(1));
+      expect(transport.transactions, hasLength(3));
+      for (final envelope in transport.envelopes) {
+        final trace = envelope.header.traceContext;
+        expect(trace, isNotNull, reason: 'the trace header is kept');
+        expect(trace!.transaction, isNull);
+        expect(trace.traceId, isNot(SentryId.empty()));
+        final header = jsonEncode(envelope.header.toJson());
+        for (final secret in ['SECRETCODE', 'jane@example.com', 'jane-doe']) {
+          expect(header, isNot(contains(secret)), reason: secret);
+        }
+      }
+      expect(
+        transport.transactions.map((t) => t.transaction),
+        containsAll(['/study/42', 'upload {email}']),
+      );
+    });
+
+    test('JSON unicode escapes do not hide URLs, secrets and e-mails', () {
+      // the JSON escape of a character, built at runtime so no tool turns
+      // it into the character itself
+      String u(String hex) => '\\u$hex';
+      final amp = u('0026');
+      expect(amp, hasLength(6));
+      scrubs(
+        '{"redirect":"https://h/cb?state=abc${amp}code=SECRETCODE"}',
+        '{"redirect":"https://h/cb"}',
+      );
+      scrubs(
+        '{"body":"grant_type=x${amp}access_token=SECRET1${amp}y=1"}',
+        '{"body":"grant_type=x&access_token={redacted}&y=1"}',
+      );
+      scrubs('form: code${u('003D')}abc', 'form: code=abc');
+      scrubs('{"user":"jane${u('0040')}example.com"}', '{"user":"{email}"}');
+    });
+
+    test('secrets in `name: value` form are redacted', () {
+      scrubs(
+        '{access_token: opaqueSECRET, token_type: Bearer}',
+        '{access_token: {redacted}, token_type: Bearer}',
+      );
+      scrubs(
+        'PlatformException(token_failed, null, {access_token: aSECRET, '
+            'refresh_token: rSECRET}, null)',
+        'PlatformException(token_failed, null, {access_token: {redacted}, '
+            'refresh_token: {redacted}}, null)',
+      );
+      scrubs(
+        'OAuthToken - accessToken: a1b2c3, refresh_token: d4e5f6, '
+            'tokenType: Bearer',
+        'OAuthToken - accessToken: {redacted}, refresh_token: {redacted}, '
+            'tokenType: Bearer',
+      );
+      scrubs('password="hunter2"', 'password="{redacted}"');
+      scrubs("client_secret='s3cr3t'", "client_secret='{redacted}'");
+      for (final text in [
+        'the access_token= parameter is missing',
+        'Invalid password: too short',
+        'accessTokenExpired: true',
+        '{access_token: {jwt}}',
+      ]) {
+        scrubs(text, text);
+      }
+    });
+
+    test('a JSON secret in a JSON string keeps no part of its value', () {
+      scrubs(
+        r'{\"password\":\"a\\\"b-rest\",\"x\":1}',
+        r'{\"password\":\"{redacted}\",\"x\":1}',
+      );
+    });
+
+    test('user info with an @ in the password is removed completely', () {
+      scrubs('ftp://user:p@ss@host/x', 'ftp://host/x');
+      scrubs(
+        'postgres://carp:s3cr@t@db.example.org:5432/carp',
+        'postgres://db.example.org:5432/carp',
+      );
+    });
+
+    test('hardware addresses glued to other hex pairs are redacted', () {
+      scrubs('E4:5F:01:AA:BB:CC-01', '{mac}-01');
+      scrubs('01-E4:5F:01:AA:BB:CC', '01-{mac}');
+      scrubs('E4:5F:01:AA:BB:CC-11:22:33:44:55:66', '{mac}-{mac}');
+      scrubs(
+        'in https://h.dk/d/E4:5F:01:AA:BB:CC-11:22:33:44:55:66 now',
+        'in https://h.dk/d/{mac}-{mac} now',
+      );
+      // hex dumps and mixed separators stay
+      scrubs('01:02:03:04:05:06:07:08', '01:02:03:04:05:06:07:08');
+      scrubs('01:02-03:04-05:06', '01:02-03:04-05:06');
+    });
+
+    test('placeholders glued in one path segment survive normalising '
+        'again', () {
+      expect(normalizePathSegment('%7Bmac%7D-%7Bmac%7D'), '{mac}-{mac}');
+      expect(
+        normalizePathSegment('{study}-{participant}'),
+        '{study}-{participant}',
+      );
+      final templated = Privacy(
+        user: SentryUser(id: 'u'),
+        templates: [
+          PathTemplate(RegExp(r'/d/[^/]+'), '/d/{study}-{participant}'),
+        ],
+      );
+      final once = templated.url('https://h.dk/d/s1-p1?x=1');
+      expect(once, 'https://h.dk/d/{study}-{participant}');
+      expect(templated.url(once), once);
+      expect(templated.text('see $once'), 'see $once');
+    });
+
+    test('the coarse fallback replaces the whole run around an e-mail', () {
+      final event = SentryEvent(
+        exceptions: [
+          SentryException(
+            type: 'E',
+            value:
+                '{"user":"jane@example.com","note":"${'x' * 300}",'
+                '"refresh":"opaque-REFRESH-SECRET"} and more',
+          ),
+        ],
+      );
+      // a raw map under a typed key makes the full policy fail
+      event.contexts['device'] = {'raw': 1};
+      final value = privacy.event(event)!.exceptions!.single.value!;
+      expect(value, '{email} and more');
+    });
+
+    test('the name and unit of an opted-in metric are scrubbed', () async {
+      final seen = <SentryMetric>[];
+      await init(
+        configure: (o) => o.beforeSendMetric = (metric, hint) {
+          seen.add(metric);
+          return metric;
+        },
+      );
+      Sentry.metrics.distribution(
+        'upload.jane@example.com',
+        12,
+        unit: 'ms-for-jane@example.com',
+      );
+      await eventually(() => seen.isNotEmpty);
+      await settle();
+      await CarpGlitchTip.close(); // flushes the metrics
+      final json = <String>[
+        for (final envelope in transport.envelopes)
+          for (final item in envelope.items)
+            if (item.header.type == 'trace_metric')
+              utf8.decode(await item.dataFactory()),
+      ].join();
+      expect(json, contains('{email}'));
+      expect(json, isNot(contains('jane@example.com')));
+    });
   });
 }
